@@ -325,7 +325,7 @@ func (r *StorageForumDB) GetPostsFlatSlugOrId(slugOrId string, filter tools.Filt
 		err = row.Scan(&tmpId)
 
 		if filter.Since == Default {
-			query.WriteString("thread = $1 order by id" + filter.Desc + " limit $2")
+			query.WriteString("thread = $1 order by id " + filter.Desc + " limit $2")
 			rows, err = r.db.Query(query.String(), tmpId, filter.Limit)
 		} else {
 			if filter.Desc == Desc {
@@ -389,10 +389,10 @@ func (r *StorageForumDB) GetPostsTreeSlugOrId(slugOrId string, filter tools.Filt
 			rows, err = r.db.Query(query.String(), tmpId, filter.Limit)
 		} else {
 			if filter.Desc == Desc {
-				query.WriteString("thread = $1 and paths < (select paths from post where id=$2 order by paths desc, id desc limit $3")
+				query.WriteString("thread = $1 and paths < (select paths from post where id=$2) order by paths desc, id desc limit $3")
 				rows, err = r.db.Query(query.String(), tmpId, filter.Since, filter.Limit)
 			} else {
-				query.WriteString("thread = $1 and paths > (select paths from post where id=$2 order by paths asc, id asc limit $3")
+				query.WriteString("thread = $1 and paths > (select paths from post where id=$2) order by paths asc, id asc limit $3")
 				rows, err = r.db.Query(query.String(), tmpId, filter.Since, filter.Limit)
 			}
 		}
@@ -402,10 +402,10 @@ func (r *StorageForumDB) GetPostsTreeSlugOrId(slugOrId string, filter tools.Filt
 			rows, err = r.db.Query(query.String(), id, filter.Limit)
 		} else {
 			if filter.Desc == Desc {
-				query.WriteString("thread = $1 and paths < (select paths from post where id=$2 order by paths desc, id desc limit $3")
+				query.WriteString("thread = $1 and paths < (select paths from post where id=$2) order by paths desc, id desc limit $3")
 				rows, err = r.db.Query(query.String(), id, filter.Since, filter.Limit)
 			} else {
-				query.WriteString("thread = $1 and paths > (select paths from post where id=$2 order by paths asc, id asc limit $3")
+				query.WriteString("thread = $1 and paths > (select paths from post where id=$2) order by paths asc, id asc limit $3")
 				rows, err = r.db.Query(query.String(), id, filter.Since, filter.Limit)
 			}
 		}
