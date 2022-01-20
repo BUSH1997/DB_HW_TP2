@@ -15,8 +15,8 @@ RUN apt-get -y update && apt-get install -y postgresql-$PGVER
 USER postgres
 
 RUN /etc/init.d/postgresql start &&\
-    psql --command "CREATE USER eugeniy WITH SUPERUSER PASSWORD 'docker';" &&\
-    createdb -O eugeniy eugeniy &&\
+    psql --command "CREATE USER bush WITH SUPERUSER PASSWORD 'docker';" &&\
+    createdb -O bush forum &&\
     /etc/init.d/postgresql stop
 
 EXPOSE 5432
@@ -29,4 +29,4 @@ COPY --from=build /app/main/ .
 
 EXPOSE 5000
 ENV PGPASSWORD docker
-CMD service postgresql start && psql -h localhost -d eugeniy -U eugeniy -p 5432 -a -q -f ./db/db.sql && ./main
+CMD service postgresql start && psql -h localhost -d forum -U bush -p 5432 -a -q -f ./db/db.sql && ./main

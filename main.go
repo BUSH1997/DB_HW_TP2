@@ -55,15 +55,15 @@ func main() {
 		ServiceHandler: *serviceHandler,
 	}
 	serverRouting.ConfigRouting(router)
-	if err := router.Start("localhost:8080"); err != nil {
+	if err := router.Start(":5000"); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func GetPostgres() (*pgx.ConnPool, error) {
 	dsn := fmt.Sprintf("user=%s dbname=%s password=%s host=%s port=%s sslmode=disable",
-		"postgres", "forum11",
-		"sergeykust000", "localhost",
+		"bush", "forum",
+		"docker", "localhost",
 		"5432")
 	db, err := pgx.ParseConnectionString(dsn)
 	if err != nil {
