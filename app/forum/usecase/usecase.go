@@ -22,11 +22,12 @@ func NewUseCase(forumRepo forum.Repository, userRepo user.Repository) *UseCase {
 }
 
 func (uc *UseCase) CreateForum(forumGet models.Forum) (models.Forum, *models.CustomError) {
-	forum, err := uc.forumRepo.AddForum(forumGet)
+	forum, err := uc.forumRepo.CreateForum(forumGet)
+	if err == nil && forum == (models.Forum{}) {
+		return models.Forum{}, &models.CustomError{Message: models.NoUser}
+	}
+
 	if err != nil {
-		if pgErr, ok := err.(pgx.PgError); ok && pgErr.Code == models.PgxNoFoundFieldErrorCode {
-			return models.Forum{}, &models.CustomError{Message: models.NoUser}
-		}
 		if pgErr, ok := err.(pgx.PgError); ok && pgErr.Code == models.PgxUniqErrorCode {
 			forum, err = uc.forumRepo.GetForumBySlug(forumGet.Slug)
 			if err != nil {
@@ -40,8 +41,8 @@ func (uc *UseCase) CreateForum(forumGet models.Forum) (models.Forum, *models.Cus
 	return forum, nil
 }
 
-func (uc *UseCase) GetDetailsForum(slug string) (models.Forum, *models.CustomError) {
-	forum, err := uc.forumRepo.GetDetailsForum(slug)
+func (uc *UseCase) GetForum(slug string) (models.Forum, *models.CustomError) {
+	forum, err := uc.forumRepo.GetForum(slug)
 	if err == pgx.ErrNoRows {
 		return models.Forum{}, &models.CustomError{Message: models.NoSlug}
 	}
@@ -53,7 +54,7 @@ func (uc *UseCase) CreateThread(threadGet models.Thread) (models.Thread, *models
 	if threadGet.Slug == "" {
 		randomSlug = true
 	}
-	thread, err := uc.forumRepo.AddThread(threadGet)
+	thread, err := uc.forumRepo.CreateThread(threadGet)
 	if err != nil {
 		if pgErr, ok := err.(pgx.PgError); ok && pgErr.Code == models.PgxNoFoundFieldErrorCode {
 			return models.Thread{}, &models.CustomError{Message: models.NoUser}
@@ -74,8 +75,8 @@ func (uc *UseCase) CreateThread(threadGet models.Thread) (models.Thread, *models
 	return thread, nil
 }
 
-func (uc *UseCase) GetUsersForum(slug string, filter tools.FilterUser) ([]models.User, *models.CustomError) {
-	users, err := uc.forumRepo.GetUsersForum(slug, filter)
+func (uc *UseCase) GetForumUsers(slug string, filter tools.FilterUser) ([]models.User, *models.CustomError) {
+	users, err := uc.forumRepo.GetForumUsers(slug, filter)
 	if users == nil {
 		_, err = uc.forumRepo.GetForumBySlug(slug)
 		if err != nil {
@@ -190,7 +191,7 @@ func (uc *UseCase) CreateVote(slugOrId string, vote models.Vote) (models.Thread,
 	return thread, nil
 }
 
-func (uc *UseCase) GetThreadDetails(slugOrId string) (models.Thread, *models.CustomError) {
+func (uc *UseCase) GetThread(slugOrId string) (models.Thread, *models.CustomError) {
 	thread, err := uc.forumRepo.GetThreadBySlugOrId(slugOrId)
 	if err != nil {
 		return models.Thread{}, &models.CustomError{Message: err.Error()}

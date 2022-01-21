@@ -28,11 +28,22 @@ func NewStorageForumDB(db *pgx.ConnPool, err error) (*StorageForumDB, error) {
 	}, nil
 }
 
-func (r *StorageForumDB) AddForum(forum models.Forum) (models.Forum, error) {
-	err := r.db.QueryRow(`insert into forum (title, "user", slug) values ($1,coalesce((select nickname from users where nickname = $2), $2), $3)
-		                      returning title, "user", slug`,
-		forum.Title, forum.User, forum.Slug).
-		Scan(&forum.Title, &forum.User, &forum.Slug)
+func (r *StorageForumDB) CreateForum(forum models.Forum) (models.Forum, error) {
+	var nickName string
+	err := r.db.QueryRow(`select nickname from users where nickname = $1`, forum.User).Scan(&nickName)
+	if err != nil && nickName == "" {
+		return models.Forum{}, nil
+	}
+
+	if err != nil  {
+		return models.Forum{}, err
+	}
+
+	if nickName != forum.User {
+		forum.User = nickName
+	}
+
+	_, err = r.db.Exec(`insert into forum(title, "user", slug) values ($1, $2, $3)`, forum.Title, forum.User, forum.Slug)
 
 	if err != nil {
 		return models.Forum{}, err
@@ -41,7 +52,7 @@ func (r *StorageForumDB) AddForum(forum models.Forum) (models.Forum, error) {
 	return forum, nil
 }
 
-func (r *StorageForumDB) GetDetailsForum(slug string) (models.Forum, error) {
+func (r *StorageForumDB) GetForum(slug string) (models.Forum, error) {
 	var result models.Forum
 	err := r.db.QueryRow(`select title, "user", slug, posts, threads from forum where slug=$1`, slug).
 		Scan(&result.Title, &result.User, &result.Slug, &result.Posts, &result.Threads)
@@ -52,7 +63,7 @@ func (r *StorageForumDB) GetDetailsForum(slug string) (models.Forum, error) {
 	return result, nil
 }
 
-func (r *StorageForumDB) AddThread(thread models.Thread) (models.Thread, error) {
+func (r *StorageForumDB) CreateThread(thread models.Thread) (models.Thread, error) {
 	var slug sql.NullString
 
 	err := r.db.QueryRow(`insert into thread (title, author, forum, message, slug, created)
@@ -69,36 +80,22 @@ func (r *StorageForumDB) AddThread(thread models.Thread) (models.Thread, error) 
 	return thread, nil
 }
 
-func (r *StorageForumDB) GetUsersForum(slug string, filter tools.FilterUser) ([]models.User, error) {
+func (r *StorageForumDB) GetForumUsers(slug string, filter tools.FilterUser) ([]models.User, error) {
+	query := strings.Builder{}
+	query.WriteString("select u.nickname, fullname, about, email from users_forum as u join users on u.nickname = users.nickname ")
+
 	var rows *pgx.Rows
 	var err error
 	if filter.Since == Default {
-		rows, err = r.db.Query(`select u.nickname, fullname, about, email 
-			from users_forum as u inner join users on u.nickname = users.nickname 
-            where u.slug = $1 
-			order by u.nickname collate "C" `+filter.Desc+` limit $2`,
-			slug,
-			filter.Limit,
-		)
+		query.WriteString("where u.slug = $1 order by u.nickname collate \"C\" " + filter.Desc + " limit $2")
+		rows, err = r.db.Query(query.String(), slug, filter.Limit)
 	} else {
 		if filter.Desc == Desc {
-			rows, err = r.db.Query(`select u.nickname, fullname, about, email
-				from users_forum as u inner join users on u.nickname = users.nickname 
-				where u.slug = $1 and u.nickname < ($2 collate "C") 
-				order by u.nickname collate "C" desc limit $3`,
-				slug,
-				filter.Since,
-				filter.Limit,
-			)
+			query.WriteString("where u.slug = $1 and u.nickname < ($2 collate \"C\") order by u.nickname collate \"C\" desc limit $3")
+			rows, err = r.db.Query(query.String(), slug, filter.Since,filter.Limit)
 		} else {
-			rows, err = r.db.Query(`select u.nickname, fullname, about, email 
-				from users_forum as u inner join users on u.nickname = users.nickname 
-				where u.slug = $1 and u.nickname > ($2 collate "C") 
-				order by u.nickname collate "C" asc limit $3`,
-				slug,
-				filter.Since,
-				filter.Limit,
-			)
+			query.WriteString("where u.slug = $1 and u.nickname > ($2 collate \"C\") order by u.nickname collate \"C\" asc limit $3")
+			rows, err = r.db.Query(query.String(), slug, filter.Since,filter.Limit)
 		}
 	}
 
@@ -167,16 +164,14 @@ func (r *StorageForumDB) GetForumThreads(slug string, filter tools.FilterThread)
 }
 
 func (r *StorageForumDB) GetForumBySlug(slug string) (models.Forum, error) {
-	var result models.Forum
-	row := r.db.QueryRow(`select slug, title, "user", posts, threads
-		from forum where slug=$1`, slug)
-
-	err := row.Scan(&result.Slug, &result.Title, &result.User, &result.Posts, &result.Threads)
+	var forumData models.Forum
+	err := r.db.QueryRow(`select slug, title, "user", posts, threads from forum where slug=$1`, slug).
+		Scan(&forumData.Slug, &forumData.Title, &forumData.User, &forumData.Posts, &forumData.Threads)
 	if err != nil {
 		return models.Forum{}, err
 	}
 
-	return result, nil
+	return forumData, nil
 }
 
 func (r *StorageForumDB) CreatePosts(threadId int, threadForum string, posts []models.Post) ([]models.Post, error) {
@@ -221,10 +216,8 @@ func (r *StorageForumDB) CreatePosts(threadId int, threadForum string, posts []m
 
 func (r *StorageForumDB) GetThreadBySlug(slug string) (models.Thread, error) {
 	var result models.Thread
-	row := r.db.QueryRow(`select id, title, author, forum, message, votes, slug, created 
-		from thread where slug=$1`, slug)
-
-	err := row.Scan(&result.Id, &result.Title, &result.Author, &result.Forum, &result.Message, &result.Votes,
+	err := r.db.QueryRow(`select id, title, author, forum, message, votes, slug, created from thread where slug=$1`, slug).
+		Scan(&result.Id, &result.Title, &result.Author, &result.Forum, &result.Message, &result.Votes,
 		&result.Slug, &result.Created)
 	if err != nil {
 		return models.Thread{}, err
@@ -235,15 +228,14 @@ func (r *StorageForumDB) GetThreadBySlug(slug string) (models.Thread, error) {
 
 func (r *StorageForumDB) GetThreadById(id int) (models.Thread, error) {
 	var result models.Thread
-	row := r.db.QueryRow(`select id, title, author, forum, message, votes, slug, created 
-		from thread where id=$1`, id)
-	var nullSlug sql.NullString
+	row := r.db.QueryRow(`select id, title, author, forum, message, votes, slug, created from thread where id=$1`, id)
+	var slug sql.NullString
 	err := row.Scan(&result.Id, &result.Title, &result.Author, &result.Forum, &result.Message, &result.Votes,
-		&nullSlug, &result.Created)
+		&slug, &result.Created)
 	if err != nil {
 		return models.Thread{}, err
 	}
-	result.Slug = nullSlug.String
+	result.Slug = slug.String
 	return result, nil
 }
 
@@ -497,15 +489,8 @@ func (r *StorageForumDB) GetPostsParentTreeSlugOrId(slugOrId string, filter tool
 	for rows.Next() {
 		post := &models.Post{}
 
-		err = rows.Scan(
-			&post.Id,
-			&post.Parent,
-			&post.Author,
-			&post.Message,
-			&post.IsEdited,
-			&post.Forum,
-			&post.Thread,
-			&post.Created)
+		err = rows.Scan(&post.Id, &post.Parent, &post.Author, &post.Message,
+			            &post.IsEdited, &post.Forum, &post.Thread, &post.Created)
 		if err != nil {
 			return nil, err
 		}
@@ -518,7 +503,10 @@ func (r *StorageForumDB) GetPostsParentTreeSlugOrId(slugOrId string, filter tool
 
 func (r *StorageForumDB) UpdateThread(slugOrId string, thread models.Thread) (models.Thread, error) {
 	query := strings.Builder{}
-	query.WriteString("update thread set title=coalesce(nullif($1, ''), title), author=coalesce(nullif($2, ''), author), forum=coalesce(nullif($3, ''), forum), message=coalesce(nullif($4, ''), message) ")
+	query.WriteString("update thread set title=(case when $1='' then title else $1 end), " +
+		                                   "author=(case when $2='' then author else $2 end), " +
+		                                   "forum=(case when $3='' then forum else $3 end), " +
+		                                   "message=(case when $4='' then message else $4 end) ")
 
 	var row *pgx.Row
 	var err error
@@ -560,7 +548,7 @@ func (r *StorageForumDB) GetPostById(id int) (models.Post, error) {
 }
 
 func (r *StorageForumDB) UpdatePost(id int, post models.Post) (models.Post, error) {
-	err := r.db.QueryRow(`update post set message=$1, isedited= case when message = $1 then isedited else true end 
+	err := r.db.QueryRow(`update post set message=$1, isedited = case when message = $1 then isedited else true end 
 		where id=$2 returning id, parent, author, message, isedited, forum, thread, created`,
 		post.Message, id).
 		Scan(&post.Id, &post.Parent, &post.Author, &post.Message,

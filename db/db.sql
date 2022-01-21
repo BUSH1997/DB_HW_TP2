@@ -1,209 +1,200 @@
-CREATE EXTENSION IF NOT EXISTS CITEXT;
+create extension if not exists citext;
 
-DROP TABLE IF EXISTS users CASCADE;
-CREATE UNLOGGED TABLE users (
-                       nickname CITEXT UNIQUE PRIMARY KEY,
-                       fullname TEXT NOT NULL,
-                       about TEXT,
-                       email CITEXT NOT NULL UNIQUE
+drop table if exists users cascade;
+create unlogged table users (
+                       nickname citext primary key,
+                       fullname text not null,
+                       about text,
+                       email citext unique not null
 );
 
 
-DROP TABLE IF EXISTS forum CASCADE;
-CREATE UNLOGGED TABLE forum (
-                       title TEXT,
-                       "user" CITEXT,
-                       slug CITEXT PRIMARY KEY UNIQUE,
-                       posts BIGINT DEFAULT 0,
-                       threads BIGINT DEFAULT 0,
-                       FOREIGN KEY ("user") REFERENCES users(nickname)
+drop table if exists forum cascade;
+create unlogged table forum (
+                       title text,
+                       "user" citext not null,
+                       slug citext primary key,
+                       posts bigint default 0,
+                       threads bigint default 0,
+                       foreign key ("user") references users(nickname)
 );
 
 
-DROP TABLE IF EXISTS thread CASCADE;
-CREATE UNLOGGED TABLE thread (
-                        id SERIAL PRIMARY KEY,
-                        title TEXT,
-                        author CITEXT,
-                        forum CITEXT,
-                        message TEXT,
-                        votes INT DEFAULT 0,
-                        slug CITEXT UNIQUE,
-                        created TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        FOREIGN KEY (author) REFERENCES "users"(nickname),
-                        FOREIGN KEY (forum)  REFERENCES "forum" (slug)
+drop table if exists thread cascade;
+create unlogged table thread (
+                        id serial primary key,
+                        title text not null ,
+                        author citext not null,
+                        forum citext,
+                        message text not null,
+                        votes INT default 0,
+                        slug citext unique,
+                        created timestamptz default now(),
+                        foreign key (author) references "users"(nickname),
+                        foreign key (forum)  references "forum"(slug)
 );
 
 
-DROP TABLE IF EXISTS users_forum;
-CREATE unlogged TABLE users_forum (
-                             nickname CITEXT NOT NULL,
-                             slug CITEXT NOT NULL,
-                             FOREIGN KEY (nickname) REFERENCES users(nickname),
-                             FOREIGN KEY (slug) REFERENCES forum (slug),
-                             UNIQUE (nickname, slug)
+drop table if exists users_forum cascade;
+create unlogged table users_forum (
+                             nickname citext not null,
+                             slug citext not null,
+                             primary key (nickname, slug),
+                             foreign key (nickname) references users(nickname),
+                             foreign key (slug) references forum (slug)
 );
 
 
-DROP TABLE IF EXISTS post CASCADE;
-CREATE UNLOGGED TABLE post(
-                     id BIGSERIAL PRIMARY KEY,
-                     parent BIGINT DEFAULT 0,
-                     author CITEXT,
-                     message TEXT,
-                     isEdited BOOLEAN DEFAULT FALSE,
-                     forum CITEXT,
-                     thread INT,
-                     created TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                     paths BIGINT[] DEFAULT ARRAY []::INTEGER[],
-                     FOREIGN KEY (author) REFERENCES users(nickname),
-                     FOREIGN KEY (forum) REFERENCES forum(slug),
-                     FOREIGN KEY (thread) REFERENCES thread(id)
+drop table if exists post cascade;
+create unlogged table post(
+                     id bigserial primary key,
+                     parent bigint default 0,
+                     author citext not null,
+                     message text not null,
+                     isEdited boolean not null default false,
+                     forum citext,
+                     thread int,
+                     created timestamptz default now(),
+                     paths bigint[] default array[]::integer[],
+                     foreign key (author) references users(nickname),
+                     foreign key (forum) references forum(slug),
+                     foreign key (thread) references thread(id)
+);
+
+drop table if exists vote cascade ;
+create unlogged table vote (
+                      id bigserial primary key,
+                      nickname citext not null,
+                      voice int not null,
+                      thread int not null,
+                      foreign key (nickname) references users(nickname),
+                      foreign key (thread) references thread(id),
+                      unique(thread, nickname)
 );
 
 
-DROP TABLE IF EXISTS vote CASCADE;
-CREATE  UNLOGGED TABLE vote (
-                      id BIGSERIAL PRIMARY KEY,
-                      nickname CITEXT,
-                      voice INT,
-                      thread INT NOT NULL,
-                      FOREIGN KEY (nickname) REFERENCES users(nickname),
-                      FOREIGN KEY (thread) REFERENCES thread(id),
-                      UNIQUE (thread, nickname)
-);
-
-
-CREATE OR REPLACE FUNCTION add_votes() RETURNS TRIGGER AS
+create function add_votes() returns trigger as
 $add_votes$
-BEGIN
-    UPDATE thread
-    SET votes=(votes + NEW.voice)
-    WHERE id = NEW.thread;
-    return NEW;
+begin
+    update thread set votes = (votes + new.voice) where id = new.thread;
+    return new;
 end
-$add_votes$ LANGUAGE plpgsql;
+$add_votes$ language plpgsql;
 
-CREATE TRIGGER after_insert_vote
-    AFTER INSERT
-    ON vote
-    FOR EACH ROW
-    EXECUTE PROCEDURE add_votes();
+create trigger after_insert_add_votes
+    after insert
+    on vote
+    for each row
+execute procedure add_votes();
 
 
-CREATE OR REPLACE FUNCTION update_thread_votes() RETURNS TRIGGER AS
-$update_thread_votes$
-BEGIN
-    IF OLD.voice <> NEW.voice THEN
-        UPDATE thread
-        SET votes=(votes + NEW.voice * 2)
-        WHERE id = NEW.thread;
-    END IF;
-    RETURN NEW;
+create function update_votes() returns trigger as
+$update_votes$
+begin
+    if old.voice != new.voice then
+        update thread set votes = (votes + new.voice * 2) where id = new.thread;
+    end if;
+    return new;
+end
+$update_votes$ language plpgsql;
+
+create trigger after_update_votes
+    after update
+    on vote
+    for each row
+execute procedure update_votes();
+
+
+create function new_forum_user() returns trigger as
+$new_forum_user$
+begin
+    insert into users_forum(nickname, slug)
+    values (new.author, new.forum)
+    on conflict do nothing;
+    return new;
+end
+$new_forum_user$ language plpgsql;
+
+create trigger after_thread_insert_update_user
+    after insert
+    on thread
+    for each row
+execute procedure new_forum_user();
+
+create trigger after_post_insert
+    after insert
+    on post
+    for each row
+execute procedure new_forum_user();
+
+
+create function update_post_paths() returns trigger as
+$update_post_paths$
+declare
+    parent_path         bigint[];
+    first_parent_thread int;
+begin
+    if (new.parent = 0) then
+        new.paths := array_append(new.paths, new.id);
+    else
+        select paths from post where id = new.parent into parent_path;
+        select thread from post where id = parent_path[1] into first_parent_thread;
+
+        if not FOUND or first_parent_thread != new.thread then
+            raise exception 'parent post was created in another thread'
+            using errcode = '77777';
+        end if;
+
+        new.paths := new.paths || parent_path || new.id;
+    end if;
+
+    update forum
+    set posts = posts + 1
+    where forum.slug = new.forum;
+    return new;
 END
-$update_thread_votes$ LANGUAGE plpgsql;
+$update_post_paths$ language plpgsql;
 
-CREATE TRIGGER after_update_voice
-    AFTER UPDATE
-    ON vote
-    FOR EACH ROW
-    EXECUTE PROCEDURE update_thread_votes();
-
-
-CREATE OR REPLACE FUNCTION new_user_forum() RETURNS TRIGGER AS $new_user_forum$
-BEGIN
-    INSERT INTO users_forum (nickname, slug)
-    VALUES (new.author, new.forum)
-    ON CONFLICT DO NOTHING;
-    RETURN new;
-END
-$new_user_forum$ LANGUAGE plpgsql;
-
-CREATE TRIGGER after_insert_thread_update_user
-    AFTER INSERT
-    ON thread
-    FOR EACH ROW
-    EXECUTE PROCEDURE new_user_forum();
-
-CREATE TRIGGER after_insert_post
-    AFTER INSERT
-    ON post
-    FOR EACH ROW
-    EXECUTE PROCEDURE new_user_forum();
+create trigger before_post_insert
+    before insert
+    on post
+    for each row
+    execute procedure update_post_paths();
 
 
-CREATE OR REPLACE FUNCTION update_paths_post() RETURNS TRIGGER AS
-$update_paths_post$
-DECLARE
-    parent_path         BIGINT[];
-    first_parent_thread INT;
-BEGIN
-    IF (NEW.parent = 0) THEN
-        NEW.paths := array_append(NEW.paths, NEW.id);
-    ELSE
-        SELECT paths FROM post WHERE id = NEW.parent INTO parent_path;
-        SELECT thread FROM post WHERE id = parent_path[1] INTO first_parent_thread;
+create function increment_threads_counter() returns trigger as
+$increment_threads_counter$
+begin
+    update forum
+    set threads = forum.threads + 1
+    where slug = new.forum;
+return new;
+end
+$increment_threads_counter$ language plpgsql;
 
-        IF NOT FOUND OR first_parent_thread <> NEW.thread THEN
-            RAISE EXCEPTION 'parent post was created in another thread'
-            USING ERRCODE = '77777';
-        END IF;
+create trigger after_insert_thread
+    after insert
+    on thread
+    for each row
+execute procedure increment_threads_counter();
 
-        NEW.paths := NEW.paths || parent_path || NEW.id;
-    END IF;
+create index if not exists users_email ON users(email);
+create index if not exists users_forum_nickname ON users_forum(nickname);
+create index if not exists users_forum_slug ON users_forum(slug);
+create index if not exists thread_forum ON thread(forum);
+create index if not exists thread_created ON thread(created);
+create index if not exists thread_slug ON thread(slug);
+create index if not exists thread_forum_created ON thread(forum, created);
 
-    UPDATE forum
-    SET posts=posts + 1
-    WHERE forum.slug = NEW.forum;
-    RETURN NEW;
-END
-$update_paths_post$ LANGUAGE plpgsql;
+create unique index if not exists vote_thread_nickname ON vote(thread, nickname);
 
-CREATE TRIGGER before_insert_post
-    BEFORE INSERT
-    ON post
-    FOR EACH ROW
-    EXECUTE PROCEDURE update_paths_post();
+create index if not exists post_thread_paths_id ON post(thread, paths, id);
+create index if not exists post_thread_parent ON post(thread, parent);
+create index if not exists paths1_id on post (paths, id);
+create index if not exists post_paths1_paths_id ON post ((paths[1]), paths, id);
 
-
-CREATE OR REPLACE FUNCTION increment_counter_threads() RETURNS TRIGGER AS $increment_counter_threads$
-BEGIN
-    UPDATE forum
-    SET threads = forum.threads + 1
-    WHERE slug = NEW.forum;
-RETURN NEW;
-END
-$increment_counter_threads$ LANGUAGE plpgsql;
-
-CREATE TRIGGER after_insert_thread
-    AFTER INSERT
-    ON thread
-    FOR EACH ROW
-    EXECUTE PROCEDURE increment_counter_threads();
-
-CREATE INDEX IF NOT EXISTS idx_users_nickname ON users USING hash (nickname);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users USING hash (email);
-
-CREATE INDEX IF NOT EXISTS idx_forum_slug ON forum USING hash (slug);
-
-CREATE INDEX IF NOT EXISTS idx_thread_slug ON thread USING hash (slug);
-CREATE INDEX IF NOT EXISTS idx_thread_forum ON thread USING hash (forum);
-CREATE INDEX IF NOT EXISTS idx_thread_created ON thread (created);
-CREATE INDEX IF NOT EXISTS idx_thread_forum_created ON thread (forum, created);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vote_nickname_thread ON vote (thread, nickname);
-
-CREATE INDEX IF NOT EXISTS idx_users_forum_nickname_slug ON users_forum(nickname, slug);
-CREATE INDEX IF NOT EXISTS idx_users_forum_nickname ON users_forum(nickname);
-CREATE INDEX IF NOT EXISTS idx_users_forum_slug ON users_forum(slug);
-
-CREATE INDEX IF NOT EXISTS idx_post_thread_paths_id ON post (thread, paths, id);
-CREATE INDEX IF NOT EXISTS idx_post_thread_id_paths1_parent ON post (thread, (paths[1]), parent);
-create index if not exists idx_paths1_id on post ((paths[1]), id);
-CREATE INDEX IF NOT EXISTS idx_post_paths1_paths_id ON post ((paths[1]), paths, id);
-
-VACUUM;
-VACUUM ANALYSE;
+vacuum;
+vacuum analyse;
 
 
 

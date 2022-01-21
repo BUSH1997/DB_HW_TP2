@@ -30,10 +30,8 @@ func (r *StorageUserDB) AddUser(user models.User) (models.User, error) {
 
 func (r *StorageUserDB) GetUser(nickname string) (models.User, error) {
 	var result models.User
-	row := r.db.QueryRow(`select nickname, fullname, about, email 
-		from users where nickname=$1`, nickname)
-
-	err := row.Scan(&result.Nickname, &result.FullName, &result.About, &result.Email)
+	err := r.db.QueryRow(`select nickname, fullname, about, email from users where nickname=$1`, nickname).
+		Scan(&result.Nickname, &result.FullName, &result.About, &result.Email)
 	if err != nil {
 		return models.User{}, err
 	}
@@ -41,11 +39,11 @@ func (r *StorageUserDB) GetUser(nickname string) (models.User, error) {
 }
 
 func (r *StorageUserDB) UpdateUser(user models.User) (models.User, error) {
-	query := r.db.QueryRow(`update users set 
-		fullname=coalesce(nullif($1, ''), fullname), 
-		about=coalesce(nullif($2, ''), about),
-		email=coalesce(nullif($3, ''), email) 
-		where nickname=$4 returning nickname, fullname, about, email`, user.FullName, user.About, user.Email, user.Nickname)
+	query := r.db.QueryRow(`update users set fullname=(case when $1='' then fullname else $1 end), 
+	                                        	 about=(case when $2='' then about else $2 end), 
+		                                         email=(case when $3='' then email else $3 end)
+                                where nickname=$4 returning nickname, fullname, about, email`,
+                                user.FullName, user.About, user.Email, user.Nickname)
 
 	err := query.Scan(
 		&user.Nickname,
@@ -60,8 +58,7 @@ func (r *StorageUserDB) UpdateUser(user models.User) (models.User, error) {
 }
 
 func (r *StorageUserDB) GetUsersByNicknameOrEmail(nickname string, email string) ([]models.User, error) {
-	rows, err := r.db.Query(`select nickname, fullname, about, email 
-		from users where nickname=$1 or email=$2`, nickname, email)
+	rows, err := r.db.Query(`select nickname, fullname, about, email from users where nickname=$1 or email=$2`, nickname, email)
 	if err != nil {
 		return nil, err
 	}

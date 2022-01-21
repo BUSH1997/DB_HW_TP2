@@ -6,11 +6,11 @@ import (
 )
 
 type Repository interface {
-	AddForum(forum models.Forum) (models.Forum, error)
+	CreateForum(forum models.Forum) (models.Forum, error)
 	GetForumBySlug(slug string) (models.Forum, error)
-	GetDetailsForum(slug string) (models.Forum, error)
-	AddThread(thread models.Thread) (models.Thread, error)
-	GetUsersForum(slug string, filter tools.FilterUser) ([]models.User, error)
+	GetForum(slug string) (models.Forum, error)
+	CreateThread(thread models.Thread) (models.Thread, error)
+	GetForumUsers(slug string, filter tools.FilterUser) ([]models.User, error)
 	GetForumThreads(slug string, filter tools.FilterThread) ([]models.Thread, error)
 	CreatePosts(threadId int, threadForum string, post []models.Post) ([]models.Post, error)
 	GetThreadBySlug(slug string) (models.Thread, error)

@@ -39,17 +39,6 @@ func (fh *ForumHandler) CreateForum(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, forum)
 }
 
-func (fh *ForumHandler) GetForumDetails(ctx echo.Context) error {
-	slug := ctx.Param("slug")
-
-	forum, err := fh.useCase.GetDetailsForum(slug)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, err)
-	}
-
-	return ctx.JSON(http.StatusOK, forum)
-}
-
 func (fh *ForumHandler) CreateThread(ctx echo.Context) error {
 	var newThread models.Thread
 
@@ -73,16 +62,41 @@ func (fh *ForumHandler) CreateThread(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, thread)
 }
 
-func (fh *ForumHandler) GetUsersForum(ctx echo.Context) error {
+func (fh *ForumHandler) GetForum(ctx echo.Context) error {
 	slug := ctx.Param("slug")
-	filter := tools.ParseQueryFilterUser(ctx)
 
-	users, err := fh.useCase.GetUsersForum(slug, filter)
+	forum, err := fh.useCase.GetForum(slug)
 	if err != nil {
 		return ctx.JSON(http.StatusNotFound, err)
 	}
 
-	return ctx.JSON(http.StatusOK, users)
+	return ctx.JSON(http.StatusOK, forum)
+}
+
+func (fh *ForumHandler) GetThread(ctx echo.Context) error {
+	slugOrId := ctx.Param("slug_or_id")
+	thread, err := fh.useCase.GetThread(slugOrId)
+	if err != nil {
+		return ctx.JSON(http.StatusNotFound, err)
+	}
+
+	return ctx.JSON(http.StatusOK, thread)
+}
+
+func (fh *ForumHandler) UpdateThread (ctx echo.Context) error {
+	var newThread models.Thread
+
+	if err := ctx.Bind(&newThread); err != nil {
+		return ctx.JSON(http.StatusBadRequest, err.Error())
+	}
+	slugOrId := ctx.Param("slug_or_id")
+
+	thread, err := fh.useCase.UpdateThread(slugOrId, newThread)
+	if err != nil {
+		return ctx.JSON(http.StatusNotFound, err)
+	}
+
+	return ctx.JSON(http.StatusOK, thread)
 }
 
 func (fh *ForumHandler) GetForumThreads(ctx echo.Context) error {
@@ -122,61 +136,7 @@ func (fh *ForumHandler) CreatePosts(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, posts)
 }
 
-func (fh *ForumHandler) Vote(ctx echo.Context) error {
-	var newVoice models.Vote
-
-	if err := ctx.Bind(&newVoice); err != nil {
-		return ctx.JSON(http.StatusBadRequest, err.Error())
-	}
-	slugOrId := ctx.Param("slug_or_id")
-
-	thread, err := fh.useCase.CreateVote(slugOrId, newVoice)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, err)
-	}
-
-	return ctx.JSON(http.StatusOK, thread)
-}
-
-func (fh *ForumHandler) Details(ctx echo.Context) error {
-	slugOrId := ctx.Param("slug_or_id")
-	thread, err := fh.useCase.GetThreadDetails(slugOrId)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, err)
-	}
-
-	return ctx.JSON(http.StatusOK, thread)
-}
-
-func (fh *ForumHandler) GetPosts (ctx echo.Context) error {
-	filter := tools.ParseQueryFilterPost(ctx)
-	slugOrId := ctx.Param("slug_or_id")
-
-	posts, err := fh.useCase.GetPosts(slugOrId, filter)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, err)
-	}
-
-	return ctx.JSON(http.StatusOK, posts)
-}
-
-func (fh *ForumHandler) UpdateThread (ctx echo.Context) error {
-	var newThread models.Thread
-
-	if err := ctx.Bind(&newThread); err != nil {
-		return ctx.JSON(http.StatusBadRequest, err.Error())
-	}
-	slugOrId := ctx.Param("slug_or_id")
-
-	thread, err := fh.useCase.UpdateThread(slugOrId, newThread)
-	if err != nil {
-		return ctx.JSON(http.StatusNotFound, err)
-	}
-
-	return ctx.JSON(http.StatusOK, thread)
-}
-
-func (fh *ForumHandler) GetOnePost (ctx echo.Context) error {
+func (fh *ForumHandler) GetPost (ctx echo.Context) error {
 	id := ctx.Param("id")
 	filter := tools.ParseQueryFilterOnePost(ctx)
 
@@ -203,3 +163,46 @@ func (fh *ForumHandler) UpdatePost (ctx echo.Context) error {
 
 	return ctx.JSON(http.StatusOK, post)
 }
+
+func (fh *ForumHandler) Vote(ctx echo.Context) error {
+	var newVoice models.Vote
+
+	if err := ctx.Bind(&newVoice); err != nil {
+		return ctx.JSON(http.StatusBadRequest, err.Error())
+	}
+	slugOrId := ctx.Param("slug_or_id")
+
+	thread, err := fh.useCase.CreateVote(slugOrId, newVoice)
+	if err != nil {
+		return ctx.JSON(http.StatusNotFound, err)
+	}
+
+	return ctx.JSON(http.StatusOK, thread)
+}
+
+
+func (fh *ForumHandler) GetPosts (ctx echo.Context) error {
+	filter := tools.ParseQueryFilterPost(ctx)
+	slugOrId := ctx.Param("slug_or_id")
+
+	posts, err := fh.useCase.GetPosts(slugOrId, filter)
+	if err != nil {
+		return ctx.JSON(http.StatusNotFound, err)
+	}
+
+	return ctx.JSON(http.StatusOK, posts)
+}
+
+func (fh *ForumHandler) GetForumUsers(ctx echo.Context) error {
+	slug := ctx.Param("slug")
+	filter := tools.ParseQueryFilterUser(ctx)
+
+	users, err := fh.useCase.GetForumUsers(slug, filter)
+	if err != nil {
+		return ctx.JSON(http.StatusNotFound, err)
+	}
+
+	return ctx.JSON(http.StatusOK, users)
+}
+
+
